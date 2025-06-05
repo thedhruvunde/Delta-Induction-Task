@@ -1,0 +1,10 @@
+git clone --branch Task-1 https://github.com/thedhruvunde/Delta-Induction-Task.git /scripts
+export PATH="/scripts/apps:$PATH"
+scrDir="/scripts/apps"
+bash "$scrDir/setupScripts"
+chown :g_admin "$scrDir/initUsers"
+chmod 770 "$scrDir/initUsers"
+chown :g_author "$scrDir/manageBlogs"
+chmod 550 "$scrDir/manageBlogs"
+chown :g_mod "$scrDir/blogFilter"
+chmod 550 "$scrDir/blogFilter"
