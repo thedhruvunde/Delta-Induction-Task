@@ -1,13 +1,18 @@
 #!/bin/bash
+#CREATING HOME DIRECTORIES
 home_dirs=("admin" "users" "mods" "authors")
 for dir in "${home_dirs[@]}"; do
-    mkdir -p "/home/$dir"
-    echo "$dir directory created"
+    if [ -d "/home/$dir" ]; then
+        :
+    else
+        mkdir -p "/home/$dir"
+        echo "$dir directory created"
+    fi
 done
 
 CONFIG_FILE="/scripts/templates/users.yaml"
 
-
+#USER CREATION FUNCTION
 create_user() {
     local username=$1
     local home_dir=$2
@@ -21,62 +26,64 @@ create_user() {
         echo "User $username created!"
     fi
 }
+#USERNAME PARSING FUNCTION
 get_usernames() {
     yq ".${1}[].username" "$CONFIG_FILE" | sort -u
 }
-
+#AUTHOR USERNAME PARSING FUNCTION
 get_authors() {
-    yq '.mods[] | select(.username == "'"$1"'") | .authors[]' users.yaml
+    yq '.mods[] | select(.username == "'"$1"'") | .authors[]' "$CONFIG_FILE"
 }
-
-echo "Processing Admins..."
+#ADMIN CREATION
 get_usernames "admins" | while read -r username; do
-    home="/home/admin/$username"
-    create_user "$username" "$home" "g_admin"
+    if id "$username" &>/dev/null; then
+        :
+    else
+        home="/home/admin/$username"
+        create_user "$username" "$home" "g_admin"
+        chmod 700 $home
+        usermod -a -G sudo $username
+    fi
 done
 
-echo "Processing Users..."
+#USER CREATION
 get_usernames "users" | while read -r username; do
-    home="/home/users/$username"
-    create_user "$username" "$home" "g_user"
-    mkdir -p "/home/users/$username/all_blogs"
+    if id "$username" &>/dev/null; then
+        :
+    else
+        home="/home/users/$username"
+        create_user "$username" "$home" "g_user"
+        mkdir -p "/home/users/$username/all_blogs"
+        chmod 700 $home
+    fi
 done
 
-echo "Processing Authors..."
+#AUTHOR CREATION
 get_usernames "authors" | while read -r username; do
-    home="/home/authors/$username"
-    create_user "$username" "$home" "g_author"
+    if id "$username" &>/dev/null; then
+        :
+    else
+        home="/home/authors/$username"
+        create_user "$username" "$home" "g_author"
+        author_dirs=("blogs" "public")
+        for dir in "${author_dirs[@]}"; do
+            mkdir -p "/home/authors/$username/$dir"
+        done
+        cp "/scripts/templates/blogs.yaml" "/home/authors/$username/"
+    fi
 done
 
-author_dirs=("blogs" "public")
-get_usernames "authors" | while read -r username; do
-    for dir in "${author_dirs[@]}"; do
-		mkdir -p "/home/authors/$username/$dir"
-    done
-    cp "blogs.yaml" "/home/authors/$username/"
-done
-
-
-echo "Processing Moderators..."
+#MOD CREATION
 get_usernames "mods" | while read -r username; do
-    home="/home/mods/$username"
-    create_user "$username" "$home" "g_mod"
+    if id "$username" &>/dev/null; then
+        :
+    else
+        home="/home/mods/$username"
+        create_user "$username" "$home" "g_mod"
+    fi
 done
 
-echo "Processing User permissions..."
-get_usernames "users" | while read -r username; do
-    home="/home/users/$username"
-    chmod 700 $home
-done
-
-echo "Processing admin permissions..."
-get_usernames "admins" | while read -r username; do
-    home="/home/admin/$username"
-    chmod 700 $home
-    usermod -a -G sudo $username
-done
-
-echo "Processing Moderators permissions..."
+#MODERATOR PERMISSION MANAGEMENT
 get_usernames "mods" | while read -r modid; do
     home="/home/mods/$modid"
     chmod 700 $home
@@ -90,8 +97,7 @@ get_usernames "mods" | while read -r modid; do
     done
 done
 
-
-echo "Creating all_blogs symlinks for users..."
+#SYMLINK CREATION FOR USERS
 authors=$(get_usernames "authors")
 get_usernames "users" | while read -r user; do
     allBlogsDir="/home/users/$user/all_blogs"
@@ -105,34 +111,8 @@ get_usernames "users" | while read -r user; do
     chmod -R 500 "$allBlogsDir"/*
     echo "All blog links created for user: $user"
 done
-getExistingUsersInGroup() {
-    getent group "$1" | cut -d: -f4 | tr ',' '\n' | sort -u
-}
 
-syncUsersInGroup() {
-    role=$1
-    group=$2
-
-    existingUsers=$(getExistingUsersInGroup "$group")
-    yamlUsers=$(get_usernames "$role")
-
-    for user in $existingUsers; do
-        if ! grep -qx "$user" <<< "$yamlUsers"; then
-            echo "Removing $user from group '$group' (not in '$role')"
-            current_groups=$(id -nG "$user" | tr ' ' '\n' | grep -v "^$group$" | paste -sd, -)
-            sudo usermod -G "$current_groups" "$user"
-        fi
-    done
-}
-
-syncUsersInGroup "users" "g_user"
-syncUsersInGroup "authors" "g_author"
-syncUsersInGroup "mods" "g_mod"
-syncUsersInGroup "admins" "g_admin"
-
-echo "Updating moderators' author access..."
 get_usernames "mods" | while read -r mod; do
-    echo "Resetting author groups for moderator: $mod"
     current_groups=$(id -nG "$mod")
     new_groups=""
     for group in $current_groups; do
@@ -142,7 +122,6 @@ get_usernames "mods" | while read -r mod; do
     done
     usermod -G "$new_groups" "$mod"
     yq ".mods[] | select(.username == \"$mod\") | .authors[]" "$CONFIG_FILE" | while read -r authorname; do
-        echo "Granting $mod access to $authorname"
         usermod -a -G "$authorname" "$mod"
         chown "$authorname:$authorname" "/home/authors/$authorname/public"
         chmod 770 "/home/authors/$authorname"
