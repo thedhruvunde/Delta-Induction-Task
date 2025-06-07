@@ -53,8 +53,10 @@ get_usernames "users" | while read -r username; do
     else
         home="/home/users/$username"
         create_user "$username" "$home" "g_user"
-        mkdir -p "/home/users/$username/all_blogs"
+        mkdir -p "$home/all_blogs"
+        touch "$home/FYI.yaml"
         chmod 700 $home
+
     fi
 done
 
