@@ -1,0 +1,93 @@
+#!/bin/bash
+
+#Admin only check
+if ! id -nG "$USER" | grep -qw "g_admin"; then
+  echo "Only admins can run this script."
+  exit 1
+fi
+
+USER_FILE="/scripts/templates/userpref.yaml"
+AUTHOR_ROOT="/home/authors"
+USER_DIR="/home/users"
+TEMP_BLOG_DB="all_blogs.tmp"
+
+> "$TEMP_BLOG_DB"
+
+# Collect blogs
+for blogfile in "$AUTHOR_ROOT"/*/blogs.yaml; do
+  author=$(basename "$(dirname "$blogfile")")
+  yq eval '.blogs[] | select(.publish_status == true)' "$blogfile" | \
+  yq eval-all --prettyOutput "
+    . as \$item ireduce ({}; .file_name = \$item.file_name | .cat_order = \$item.cat_order )
+  " - > /tmp/single.yaml
+
+  num_blogs=$(yq eval '. | length' /tmp/single.yaml 2>/dev/null)
+
+  for ((i=0; i<num_blogs; i++)); do
+    blog_file=$(yq eval ".[$i].file_name" /tmp/single.yaml)
+    tags=$(yq eval ".[$i].cat_order[]" "$blogfile" | xargs)
+    echo "$blog_file|$tags|$author" >> "$TEMP_BLOG_DB"
+  done
+done
+
+#Blog list and usage count map
+declare -A blog_counts
+mapfile -t blogs_raw < <(cat "$TEMP_BLOG_DB")
+
+#Build blog-category map
+declare -A blog_tags
+declare -A blog_origin
+for line in "${blogs_raw[@]}"; do
+  blog=$(echo "$line" | cut -d '|' -f1)
+  tag_str=$(echo "$line" | cut -d '|' -f2)
+  author=$(echo "$line" | cut -d '|' -f3)
+  blog_tags["$blog"]="$tag_str"
+  blog_origin["$blog"]="$author"
+  blog_counts["$blog"]=0
+done
+
+#Process users
+total_users=$(yq eval '.users | length' "$USER_FILE")
+
+for ((i = 0; i < total_users; i++)); do
+  username=$(yq eval ".users[$i].username" "$USER_FILE")
+  pref1=$(yq eval ".users[$i].pref1" "$USER_FILE")
+  pref2=$(yq eval ".users[$i].pref2" "$USER_FILE")
+  pref3=$(yq eval ".users[$i].pref3" "$USER_FILE")
+
+  # Score blogs for this user
+  declare -A blog_score
+  for blog in "${!blog_tags[@]}"; do
+    score=0
+    tag_indexes="${blog_tags[$blog]}"
+    for tag in $tag_indexes; do
+      # Convert index to name
+      tag_name=$(yq eval ".categories.${tag}" "$AUTHOR_ROOT"/$(ls "$AUTHOR_ROOT" | head -n 1)/blogs.yaml)
+      [[ "$tag_name" == "$pref1" ]] && ((score+=3))
+      [[ "$tag_name" == "$pref2" ]] && ((score+=2))
+      [[ "$tag_name" == "$pref3" ]] && ((score+=1))
+    done
+    blog_score["$blog"]=$score
+  done
+
+  selected_blogs=$(for blog in "${!blog_score[@]}"; do
+    echo "$blog ${blog_score[$blog]} ${blog_counts[$blog]}"
+  done | sort -k2,2nr -k3,3n | head -n 3 | awk '{print $1}')
+
+  # Update usage
+  for blog in $selected_blogs; do
+    ((blog_counts["$blog"]++))
+  done
+
+  {
+    echo "For_You_Page:"
+    for blog in $selected_blogs; do
+      echo "  - blog: $blog"
+      echo "    by: ${blog_origin[$blog]}"
+    done
+  } > "$USER_DIR/$username/FYI.yaml"
+
+done
+
+# Cleanup
+rm -f "$TEMP_BLOG_DB" /tmp/single.yaml
