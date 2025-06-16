@@ -1,4 +1,8 @@
 #!/bin/bash
+if ! id -nG "$USER" | grep -qw "g_author"; then
+  echo "Only admins can run this script."
+  exit 1
+fi
 
 p_flag=""
 a_flag=""
