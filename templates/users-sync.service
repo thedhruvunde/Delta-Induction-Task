@@ -1,0 +1,13 @@
+[Unit]
+Description=User and Author Sync Watcher
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/watchUsers.sh
+Restart=always
+User=root
+StandardOutput=append:/var/log/users_sync.log
+StandardError=append:/var/log/users_sync.log
+
+[Install]
+WantedBy=multi-user.target
