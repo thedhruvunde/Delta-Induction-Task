@@ -1,7 +1,7 @@
 #!/bin/bash
 
-YAML_FILE="/path/to/users.yaml"
-SCRIPT="/path/to/initUsers"
+YAML_FILE="/scripts/templates/users.yaml"
+SCRIPT="/scripts/apps/initUsers"
 
 while true; do
     inotifywait -e modify "$YAML_FILE"

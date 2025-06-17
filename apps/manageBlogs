@@ -14,7 +14,7 @@ AUTHOR_HOME="/home/authors/$AUTHOR"
 BLOGS_DIR="$AUTHOR_HOME/blogs"
 PUBLIC_DIR="$AUTHOR_HOME/public"
 BLOG_CONFIG="/home/authors/$authorid/blogs.yaml"
-
+today=$(date +"%d-%m-%y")
 get_categories() {
     yq '.categories[]' "$BLOG_CONFIG" | sort -u
 }
@@ -25,7 +25,7 @@ while getopts "p:a:d:e:" opt; do
         p_flag=$OPTARG
         echo "Enter Categories in which the blog belongs: "
         read catl
-        yq -i ".blogs += [{"file_name": "$p_flag", "publish_status": true, "cat_order": $catl}]" $BLOG_CONFIG
+        yq -i ".blogs += [{"file_name": "$p_flag", "publish_status": true, "cat_order": $catl, "publish_date": $today}]" $BLOG_CONFIG
         ln -s "$p_flag" "$HOME/public/$p_flag"
         chmod o+r "$BLOGS_DIR/$p_flag"
         ;;
@@ -43,7 +43,10 @@ while getopts "p:a:d:e:" opt; do
         rm "$HOME/public/$d_flag"
         rm "$HOME/blogs/$d_flag"
         bindex=$(yq ".blogs | to_entries | map(select(.value.file_name == "$d_flag")) | .[0].key" $BLOG_CONFIG)
+        catl=$(yq e ".blogs[$bindex].cat_order" $BLOG_CONFIG)
+        publish_date=$(yq e ".blogs[$bindex].publish_date" $BLOG_CONFIG)
         yq -i "del(.blogs[$bindex])" $BLOG_CONFIG
+        yq -i ".deleted_blogs += [{"file_name": "$d_flag", "cat_order": $catl, "publish_date": $publish_date, "deletion_date": $today}]" $BLOG_CONFIG
         ;;
     e)
         e_flag=$OPTARG

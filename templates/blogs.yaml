@@ -1,11 +1,12 @@
 categories:
-    1: "Sports"
-    2: "Cinema"
-    3: "Technology"
-    4: "Travel"
-    5: "Food"
-    6: "Lifestyle"
-    7: "Finance"
+  1: "Sports"
+  2: "Cinema"
+  3: "Technology"
+  4: "Travel"
+  5: "Food"
+  6: "Lifestyle"
+  7: "Finance"
 
 blogs:
 
+deleted_blogs:
