@@ -3,6 +3,9 @@ export PATH="/scripts/apps:$PATH"
 scrDir="/scripts/apps"
 YAML_FILE="/scripts/templates/users.yaml"
 INIT_SCRIPT="$scrDir/initUsers"
+CRON_TIME="14 15 * 2,5,8,11 4,6"
+REPORT_SCRIPT="/scripts/apps/adminPanel"
+CRON_CMD="$CRON_TIME $REPORT_SCRIPT"
 addgroup g_user
 addgroup g_mod
 addgroup g_admin
@@ -17,3 +20,4 @@ systemctl daemon-reexec
 systemctl daemon-reload
 systemctl enable users-sync.service
 systemctl start users-sync.service
+(crontab -l 2>/dev/null; echo "$CRON_CMD") | crontab -
