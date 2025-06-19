@@ -1,0 +1,116 @@
+#!/bin/bash
+AUTHOR_ROOT="/home/authors"
+#Admin only check
+if ! id -nG "$USER" | grep -qw "g_admin"; then
+  echo "Only admins can run this script."
+  exit 1
+fi
+
+LAST_RUN_FILE=".last_run"
+declare -A cat_map
+declare -A published_cat_count
+declare -A deleted_cat_count
+
+
+adminReport() {
+    # Get current time and last run timestamp
+    current_date=$(date +%s)
+    if [[ -f "$LAST_RUN_FILE" ]]; then
+        last_run_epoch=$(cat "$LAST_RUN_FILE")
+    else
+        last_run_epoch=0
+    fi
+
+    # Load category map from any one blogs.yaml file
+    first_file=$(find /home/authors/ -name blogs.yaml | head -n 1)
+    for key in $(yq e '.categories | keys | .[]' "$first_file"); do
+        name=$(yq e ".categories.\"$key\"" "$first_file")
+        cat_map["$key"]="$name"
+    done
+
+    # Loop through each author's blogs.yaml file
+    for file in /home/authors/*/blogs.yaml; do
+
+        # Published blogs
+        yq -o=json '.blogs[]?' "$file" | jq -c '.' | while read -r blog; do
+            pub_status=$(echo "$blog" | jq -r '.publish_status')
+            pub_date_str=$(echo "$blog" | jq -r '.publish_date')
+
+            if [ "$pub_status" = "true" ]; then
+                pub_date_epoch=$(date -d "$pub_date_str" +%s 2>/dev/null)
+                if [ -n "$pub_date_epoch" ] && [ "$pub_date_epoch" -gt "$last_run_epoch" ]; then
+                    echo "$blog" | jq -r '.cat_order[]' | while read -r cat; do
+                        published_cat_count["$cat"]=$((published_cat_count["$cat"] + 1))
+                    done
+                fi
+            fi
+        done
+
+        # Deleted blogs
+        yq -o=json '.deleted_blogs[]?' "$file" | jq -c '.' | while read -r blog; do
+            del_date_str=$(echo "$blog" | jq -r '.deletion_date')
+            del_date_epoch=$(date -d "$del_date_str" +%s 2>/dev/null)
+            if [ -n "$del_date_epoch" ] && [ "$del_date_epoch" -gt "$last_run_epoch" ]; then
+                echo "$blog" | jq -r '.cat_order[]' | while read -r cat; do
+                    deleted_cat_count["$cat"]=$((deleted_cat_count["$cat"] + 1))
+                done
+            fi
+        done
+
+    done
+
+    # Report summary
+    echo "Report since last run on: $(date -d "@$last_run_epoch" "+%d-%m-%Y %H:%M:%S")"
+    echo ""
+
+    # Output published blogs count sorted by category
+    echo "Published Blogs by Category (since last run):"
+    for cat in "${!published_cat_count[@]}"; do
+        count=${published_cat_count[$cat]}
+        echo -e "$count published in category: ${cat_map[$cat]} ($cat)"
+    done | sort -nr
+    echo ""
+
+    # Output deleted blogs count sorted by category
+    echo "Deleted Blogs by Category (since last run):"
+    for cat in "${!deleted_cat_count[@]}"; do
+        count=${deleted_cat_count[$cat]}
+        echo -e "$count deleted from category: ${cat_map[$cat]} ($cat)"
+    done | sort -nr
+    echo ""
+
+    # Update last run timestamp
+    echo "$current_date" > "$LAST_RUN_FILE"
+
+}
+
+# Check if today is Saturday
+day_of_week=$(date +%u)
+
+if [ "$day_of_week" -eq 6 ]; then
+    day=$(date +%d)
+    month=$(date +%m)
+    year=$(date +%Y)
+
+    # Get the last day of the month
+    last_day=$(date -d "$year-$month-01 +1 month -1 day" +%d)
+
+    # check for first saturday
+    if [ "$day" -le 7 ]; then
+        run_report=true
+    fi
+
+    # check for lest saturday
+    remaining_saturdays=$(cal | grep "^ *$day *" | wc -l)
+    if [ "$day" -ge $((last_day - 6)) ]; then
+        run_report=true
+    fi
+
+    if [ "$run_report" = true ]; then
+        adminReport
+    fi
+
+else
+    # Thursday
+    adminReport
+fi
