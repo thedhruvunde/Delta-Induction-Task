@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     git \
     vim \
     inotify-tools\
+    jq\
     && rm -rf /var/lib/apt/lists/*
 
 COPY setup.sh /setup.sh

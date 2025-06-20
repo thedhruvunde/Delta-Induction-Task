@@ -13,11 +13,16 @@ addgroup g_author
 wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_arm64 -O /usr/local/bin/yq
 chmod +x /usr/local/bin/yq
 chmod +x /scripts/apps/*
-cp "/scripts/templates/watchUsers.sh" "/usr/local/bin/watchUsers.sh"
+cp "/scripts/templates/watchUsers" "/usr/local/bin/watchUsers"
+cp "/scripts/templates/countReads" "/usr/local/bin/countReads"
 cp "/scripts/templates/users-sync.service" "/etc/systemd/system/users-sync.service"
-chmod +x /usr/local/bin/watchUsers.sh
+cp "/scripts/templates/count-reads.service" "/etc/systemd/system/count-reads.service"
+chmod +x /usr/local/bin/watchUsers
+chmod +x /usr/local/bin/countReads
 systemctl daemon-reexec
 systemctl daemon-reload
 systemctl enable users-sync.service
 systemctl start users-sync.service
+systemctl enable count-reads.service
+systemctl start count-reads.service
 (crontab -l 2>/dev/null; echo "$CRON_CMD") | crontab -
