@@ -1,5 +1,5 @@
 git clone --branch Task-1 https://github.com/thedhruvunde/Delta-Induction-Task.git /scripts
-export PATH="/scripts/apps:$PATH"
+export PATH="/scripts/apps/:$PATH"
 scrDir="/scripts/apps"
 YAML_FILE="/scripts/templates/users.yaml"
 INIT_SCRIPT="$scrDir/initUsers"
@@ -26,3 +26,4 @@ systemctl start users-sync.service
 systemctl enable count-reads.service
 systemctl start count-reads.service
 (crontab -l 2>/dev/null; echo "$CRON_CMD") | crontab -
+/sc
