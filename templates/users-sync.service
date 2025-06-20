@@ -3,7 +3,7 @@ Description=User and Author Sync Watcher
 After=network.target
 
 [Service]
-ExecStart=/usr/local/bin/watchUsers.sh
+ExecStart=/usr/local/bin/watchUsers
 Restart=always
 User=root
 StandardOutput=append:/var/log/users_sync.log

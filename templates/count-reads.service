@@ -1,0 +1,13 @@
+[Unit]
+Description=Blogs read counter
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/countReads
+Restart=always
+User=root
+StandardOutput=append:/var/log/read_count.log
+StandardError=append:/var/log/read_count.log
+
+[Install]
+WantedBy=multi-user.target

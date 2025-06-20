@@ -1,5 +1,6 @@
 #!/bin/bash
 AUTHOR_ROOT="/home/authors"
+ADMIN_FILE="/home/admin/$USER/adminReport.txt"
 #Admin only check
 if ! id -nG "$USER" | grep -qw "g_admin"; then
   echo "Only admins can run this script."
@@ -79,6 +80,26 @@ adminReport() {
     done | sort -nr
     echo ""
 
+    echo "Top 3 Most Read Blogs (from all authors):"
+
+    temp_file=$(mktemp)
+
+    for file in /home/authors/*/blogs.yaml; do
+        yq -o=json '.blogs[]?' "$file" | jq -c '.' | while read -r blog; do
+            file_name=$(echo "$blog" | jq -r '.file_name')
+            read_count=$(echo "$blog" | jq -r '.read_count // 0')
+            echo "$read_count $file_name" >> "$temp_file"
+        done
+    done
+
+    sort -nr "$temp_file" | head -n 3 | while read -r line; do
+        count=$(echo "$line" | awk '{print $1}')
+        name=$(echo "$line" | cut -d' ' -f2-)
+        echo "$name: $count reads"
+    done
+
+    rm "$temp_file"
+
     # Update last run timestamp
     echo "$current_date" > "$LAST_RUN_FILE"
 
@@ -108,9 +129,11 @@ if [ "$day_of_week" -eq 6 ]; then
 
     if [ "$run_report" = true ]; then
         adminReport
+        adminReport > "$ADMIN_FILE"
     fi
 
 else
     # Thursday
     adminReport
+    adminReport > "$ADMIN_FILE"
 fi

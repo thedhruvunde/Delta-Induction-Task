@@ -1,0 +1,14 @@
+#!/bin/bash
+
+AUTHORS_DIR="/home/authors"
+
+while true; do
+    for yaml_file in "$AUTHORS_DIR"/*/blogs.yaml; do
+        blogs=$(yq e '.blogs[]?.file_name' "$yaml_file")
+
+        for blog in $blogs; do
+            yq e "(.blogs[] | select(.file_name == \"$blog\").read_count) |= (. // 0 + 1)" -i "$yaml_file"
+        done
+    done
+    sleep 10
+done
