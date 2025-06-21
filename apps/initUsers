@@ -72,6 +72,11 @@ get_usernames "authors" | while read -r username; do
             mkdir -p "/home/authors/$username/$dir"
         done
         cp "/scripts/templates/blogs.yaml" "/home/authors/$username/"
+        IP="127.0.0.1"
+        domain=".coolblogs.in"
+        HOSTS_FILE="/etc/hosts"
+        echo "$IP $username$domain" >> "$HOSTS_FILE"
+        chmod -R o+rX "$$home/public"
     fi
 done
 
@@ -92,7 +97,8 @@ get_usernames "mods" | while read -r modid; do
     get_authors $modid | while read -r authorid; do
         usermod -a -G $authorid $modid
         chown $authorid:$authorid "/home/authors/$authorid"
-        chmod 770 "/home/authors/$authorid"
+        chmod 771 "/home/authors/$authorid"
+        chmod 775 "/home/authors/$authorid/public"
         mkdir -p "/home/mods/$modid/AuthorDirs/$authorid"
         cp "/scripts/templates/blacklist.txt" "$home"
         ln -s "/home/authors/$authorid" "/home/mods/$modid/AuthorDirs/$authorid"

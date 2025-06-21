@@ -1,14 +1,26 @@
 #!/bin/bash
 
 AUTHORS_DIR="/home/authors"
+ACCESS_LOG="/var/log/nginx/access.log"
 
-while true; do
-    for yaml_file in "$AUTHORS_DIR"/*/blogs.yaml; do
-        blogs=$(yq e '.blogs[]?.file_name' "$yaml_file")
+inotifywait -m -e modify "$ACCESS_LOG" --format '%w%f' | while read -r logfile; do
+    tail -n0 -F "$logfile" | while read -r line; do
+        host=$(echo "$line" | awk '{print $11}' | sed 's/"//g')
+        path=$(echo "$line" | awk '{print $7}')
+        method=$(echo "$line" | awk '{print $6}' | sed 's/"//g')
 
-        for blog in $blogs; do
-            yq e "(.blogs[] | select(.file_name == \"$blog\").read_count) |= (. // 0 + 1)" -i "$yaml_file"
-        done
+        if [[ "$method" == "GET" && "$path" == *.txt && "$host" == *.blog.in ]]; then
+            username="${host%%.*}"
+            blog_file="$(basename "$path")"
+            yaml_file="$AUTHORS_DIR/$username/blogs.yaml"
+
+            if [[ -f "$yaml_file" ]]; then
+                yq e "(.blogs[] | select(.file_name == \"$blog_file\").read_count) |= (. // 0 + 1)" -i "$yaml_file"
+
+            else
+                echo "YAML not found: $yaml_file. Creating new one."
+                cp "/scripts/templates/blogs.yaml" "$yaml_file"
+            fi
+        fi
     done
-    sleep 10
 done
