@@ -14,7 +14,14 @@ RUN apt-get update && apt-get install -y \
     inotify-tools\
     jq\
     nginx\
+    postgresql\
+    postgresql-contrib\
+    python3-pip\
+    python3-psycopg2\
+    libpq-dev\
     && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install pyyaml
 
 COPY setup.sh /setup.sh
 RUN chmod +x /setup.sh && /setup.sh

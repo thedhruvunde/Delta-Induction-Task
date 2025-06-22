@@ -25,7 +25,12 @@ systemctl enable users-sync.service
 systemctl start users-sync.service
 systemctl enable count-reads.service
 systemctl start count-reads.service
+systemctl enable nginx.service
+systemctl start nginx.service
+systemctl enable postgresql.service
+systemctl start postgresql.service
 (crontab -l 2>/dev/null; echo "$CRON_CMD") | crontab -
 cp "/scripts/templates/nginx-config" "/etc/nginx/sites-available/nginx-config"
-sudo ln -s /etc/nginx/sites-available/nginx-config /etc/nginx/sites-enabled/
-# sudo nginx -t && sudo systemctl reload nginx
+ln -s /etc/nginx/sites-available/nginx-config /etc/nginx/sites-enabled/
+nginx -t >> /dev/null
+systemctl reload nginx
