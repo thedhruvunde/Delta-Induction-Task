@@ -28,7 +28,12 @@ systemctl start count-reads.service
 ln -s /etc/nginx/sites-available/nginx-config /etc/nginx/sites-enabled/
 nginx -t >> /dev/null
 systemctl reload nginx
-chmod +x /db/init-db.sh
+set -e
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-EOSQL
+    CREATE DATABASE dankdb;
+    CREATE DATABASE coolblogsdb;
+EOSQL
+
 PGPASSWORD=hackjack psql -U hyphen -d coolblogsdb -h db -c "
 CREATE TABLE IF NOT EXISTS blogs (
     id SERIAL PRIMARY KEY,
