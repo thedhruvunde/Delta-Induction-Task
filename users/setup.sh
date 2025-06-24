@@ -1,4 +1,3 @@
-git clone --branch Task-1 https://github.com/thedhruvunde/Delta-Induction-Task.git /scripts
 export PATH="/scripts/apps/:$PATH"
 scrDir="/scripts/apps"
 YAML_FILE="/scripts/templates/users.yaml"
@@ -25,12 +24,20 @@ systemctl enable users-sync.service
 systemctl start users-sync.service
 systemctl enable count-reads.service
 systemctl start count-reads.service
-systemctl enable nginx.service
-systemctl start nginx.service
-systemctl enable postgresql.service
-systemctl start postgresql.service
 (crontab -l 2>/dev/null; echo "$CRON_CMD") | crontab -
-cp "/scripts/templates/nginx-config" "/etc/nginx/sites-available/nginx-config"
 ln -s /etc/nginx/sites-available/nginx-config /etc/nginx/sites-enabled/
 nginx -t >> /dev/null
 systemctl reload nginx
+chmod +x /db/init-db.sh
+PGPASSWORD=hackjack psql -U hyphen -d coolblogsdb -h db -c "
+CREATE TABLE IF NOT EXISTS blogs (
+    id SERIAL PRIMARY KEY,
+    file_name VARCHAR(255) NOT NULL,
+    author VARCHAR(50) NOT NULL,
+    status VARCHAR(20) NOT NULL CHECK (status IN ('published', 'archived', 'deleted')),
+    category_order INTEGER[],
+    publish_date DATE,
+    read_count INTEGER DEFAULT 0,
+    moderator VARCHAR(50),
+    mod_comments TEXT,
+);"
