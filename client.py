@@ -6,32 +6,32 @@ from prompt_toolkit.widgets import TextArea
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.styles import Style
 
-# Socket config
 HOST = '127.0.0.1'
 PORT = 5555
+
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock.connect((HOST, PORT))
 
-# Pre-chat interactive setup (username, room selection)
-def setup_connection():
+# --- Phase 1: Setup using normal input/output ---
+def blocking_input_phase():
     while True:
         server_msg = sock.recv(1024).decode()
-        if not server_msg:
-            break
-        print(server_msg, end='')  # show prompt
-        user_input = input()
+        print(server_msg, end='')  # print server message
+        user_input = input()       # get user input
         sock.send(user_input.encode())
         if "Created and joined" in server_msg or "Joined" in server_msg:
             break
 
-setup_connection()
+blocking_input_phase()
 
-# ---- Prompt Toolkit UI ----
+# --- Phase 2: Real-time chat with prompt_toolkit UI ---
+
+# UI elements
 chat_display = TextArea(style="class:output-field", scrollbar=True, wrap_lines=True, read_only=True)
-input_field = TextArea(height=1, prompt='> ', style="class:input-field")
+input_field = TextArea(height=1, prompt='> ', style="class:input-field", multiline=False)
 
-def print_msg(message):
-    chat_display.text += message + '\n'
+def print_msg(msg):
+    chat_display.buffer.insert_text(msg + '\n', move_cursor_to_end=True)
 
 def receive_messages():
     while True:
@@ -40,8 +40,8 @@ def receive_messages():
             if not msg:
                 break
             print_msg(msg)
-        except:
-            print_msg("[Connection lost]")
+        except Exception as e:
+            print_msg(f"[Connection Error: {e}]")
             break
 
 def send_input(_):
@@ -58,16 +58,18 @@ kb = KeyBindings()
 def _(event):
     send_input(event)
 
-# Layout and styling
-layout = Layout(HSplit([chat_display, input_field]))
+# Layout
+layout = Layout(HSplit([chat_display, input_field]), focused_element=input_field)
+
+# Style
 style = Style.from_dict({
     "output-field": "bg:#1e1e1e #ffffff",
     "input-field": "bg:#000000 #00ff00"
 })
 
-# Build app
+# App
 app = Application(layout=layout, key_bindings=kb, full_screen=True, style=style)
 
-# Run chat thread
+# Start receiving messages
 threading.Thread(target=receive_messages, daemon=True).start()
 app.run()
