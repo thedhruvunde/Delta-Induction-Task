@@ -4,24 +4,34 @@ from prompt_toolkit import Application
 from prompt_toolkit.layout import Layout, HSplit
 from prompt_toolkit.widgets import TextArea
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
-from prompt_toolkit.formatted_text import HTML
 
+# Socket config
 HOST = '127.0.0.1'
 PORT = 5555
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock.connect((HOST, PORT))
 
-# Create UI components
+# Pre-chat interactive setup (username, room selection)
+def setup_connection():
+    while True:
+        server_msg = sock.recv(1024).decode()
+        if not server_msg:
+            break
+        print(server_msg, end='')  # show prompt
+        user_input = input()
+        sock.send(user_input.encode())
+        if "Created and joined" in server_msg or "Joined" in server_msg:
+            break
+
+setup_connection()
+
+# ---- Prompt Toolkit UI ----
 chat_display = TextArea(style="class:output-field", scrollbar=True, wrap_lines=True, read_only=True)
 input_field = TextArea(height=1, prompt='> ', style="class:input-field")
 
-# Append message to chat box
 def print_msg(message):
     chat_display.text += message + '\n'
-
-# Socket and networking
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.connect((HOST, PORT))
 
 def receive_messages():
     while True:
@@ -48,16 +58,16 @@ kb = KeyBindings()
 def _(event):
     send_input(event)
 
-# Layout
+# Layout and styling
 layout = Layout(HSplit([chat_display, input_field]))
 style = Style.from_dict({
     "output-field": "bg:#1e1e1e #ffffff",
     "input-field": "bg:#000000 #00ff00"
 })
 
-# App
+# Build app
 app = Application(layout=layout, key_bindings=kb, full_screen=True, style=style)
 
-# Start receiver thread and run app
+# Run chat thread
 threading.Thread(target=receive_messages, daemon=True).start()
 app.run()
