@@ -1,75 +1,63 @@
 import socket
 import threading
-from prompt_toolkit import Application
-from prompt_toolkit.layout import Layout, HSplit
-from prompt_toolkit.widgets import TextArea
-from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit.styles import Style
+import readline
+import sys
+from colorama import Fore, Style, init
+init()
 
 HOST = '127.0.0.1'
 PORT = 5555
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock.connect((HOST, PORT))
+COLOR_MAP = {
+    'RED': Fore.RED,
+    'GREEN': Fore.GREEN,
+    'YELLOW': Fore.YELLOW,
+    'BLUE': Fore.BLUE,
+    'MAGENTA': Fore.MAGENTA,
+    'CYAN': Fore.CYAN,
+    'WHITE': Fore.WHITE
+}
 
-# --- Phase 1: Setup using normal input/output ---
-def blocking_input_phase():
-    while True:
-        server_msg = sock.recv(1024).decode()
-        print(server_msg, end='')  # print server message
-        user_input = input()       # get user input
-        sock.send(user_input.encode())
-        if "Created and joined" in server_msg or "Joined" in server_msg:
-            break
+def parse_color_tags(msg):
+    for name, code in COLOR_MAP.items():
+        msg = msg.replace(f"<{name}>", code)
+    return msg + Style.RESET_ALL
 
-blocking_input_phase()
-
-# --- Phase 2: Real-time chat with prompt_toolkit UI ---
-
-# UI elements
-chat_display = TextArea(style="class:output-field", scrollbar=True, wrap_lines=True, read_only=True)
-input_field = TextArea(height=1, prompt='> ', style="class:input-field", multiline=False)
-
-def print_msg(msg):
-    chat_display.buffer.insert_text(msg + '\n', move_cursor_to_end=True)
-
-def receive_messages():
+def receive_messages(sock):
     while True:
         try:
             msg = sock.recv(1024).decode()
             if not msg:
                 break
-            print_msg(msg)
-        except Exception as e:
-            print_msg(f"[Connection Error: {e}]")
+            msg = parse_color_tags(msg)
+
+            # Save current input
+            current_input = readline.get_line_buffer()
+            sys.stdout.write("\r" + " " * (len(current_input) + 40) + "\r")  # Clear line
+            print("\n" + msg)
+            sys.stdout.write(Fore.YELLOW + f"Type here (or /exit): {current_input}" + Style.RESET_ALL)
+            sys.stdout.flush()
+        except:
+            print("Connection closed.")
             break
 
-def send_input(_):
-    msg = input_field.text.strip()
-    if msg:
-        sock.send(msg.encode())
-        if msg.lower() == '/exit':
-            app.exit()
-    input_field.text = ""
+def send_messages(sock):
+    while True:
+        try:
+            msg = input(Fore.YELLOW + "Type here (or /exit): " + Style.RESET_ALL)
+            sock.send(msg.encode())
+            if msg.strip().lower() == "/exit":
+                break
+        except:
+            break
 
-# Key bindings
-kb = KeyBindings()
-@kb.add('enter')
-def _(event):
-    send_input(event)
+def main():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.connect((HOST, PORT))
 
-# Layout
-layout = Layout(HSplit([chat_display, input_field]), focused_element=input_field)
+    threading.Thread(target=receive_messages, args=(sock,), daemon=True).start()
+    send_messages(sock)
+    sock.close()
 
-# Style
-style = Style.from_dict({
-    "output-field": "bg:#1e1e1e #ffffff",
-    "input-field": "bg:#000000 #00ff00"
-})
-
-# App
-app = Application(layout=layout, key_bindings=kb, full_screen=True, style=style)
-
-# Start receiving messages
-threading.Thread(target=receive_messages, daemon=True).start()
-app.run()
+if __name__ == "__main__":
+    main()
