@@ -16,7 +16,7 @@ lock = threading.Lock()
 COLORS = ["RED", "GREEN", "YELLOW", "BLUE", "MAGENTA", "CYAN", "WHITE"]
 
 # Setup SQLite database
-conn = sqlite3.connect('chat.db', check_same_thread=False)
+conn = sqlite3.connect('chatmasaladb.db', check_same_thread=False)
 c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, total_messages INTEGER, total_time_online REAL)''')
 c.execute('''CREATE TABLE IF NOT EXISTS messages (username TEXT, room TEXT, content TEXT, timestamp TEXT)''')
