@@ -1,25 +1,28 @@
 import socket
 import threading
 import time
-import sqlite3
 import random
 from datetime import datetime
-
+import psycopg2
 HOST = '127.0.0.1'
 PORT = 5555
 
+conn = psycopg2.connect(
+    dbname="masalachatdb",
+    user="hyphen",
+    password="hackjack",
+    host="localhost",
+    port="5432"
+)
+c = conn.cursor()
+c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, total_messages INTEGER, total_time_online REAL)''')
+c.execute('''CREATE TABLE IF NOT EXISTS messages (username TEXT, room TEXT, content TEXT, timestamp TEXT)''')
+conn.commit()
 clients = {}  # socket: {username, room, join_time, message_count, color}
 rooms = {}  # room_id: {"clients": set(), "is_private": bool, "created_by": username, "name": str}
 lock = threading.Lock()
 
 COLORS = ["RED", "GREEN", "YELLOW", "BLUE", "MAGENTA", "CYAN", "WHITE"]
-
-# Setup SQLite database
-conn = sqlite3.connect('chatmasaladb.db', check_same_thread=False)
-c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, total_messages INTEGER, total_time_online REAL)''')
-c.execute('''CREATE TABLE IF NOT EXISTS messages (username TEXT, room TEXT, content TEXT, timestamp TEXT)''')
-conn.commit()
 
 def generate_room_id():
     while True:
@@ -55,6 +58,52 @@ def remove_client(client):
                 rooms[room]["clients"].discard(client)
             del clients[client]
             client.close()
+
+def handle_active_command(sock):
+    user = clients[sock]
+    room_id = user['room']
+    usernames = [clients[c]['username'] for c in rooms[room_id]["clients"]]
+    msg = f"Total Active Users: {len(usernames)}\n" + "\n".join(usernames)
+    sock.send(msg.encode())
+
+def handle_stats_command(sock):
+    user = clients[sock]
+    room_id = user['room']
+    username = user['username']
+
+    c.execute("SELECT COUNT(*) FROM messages WHERE room = %s", (room_id,))
+    total_msgs = c.fetchone()[0]
+
+    c.execute("SELECT COUNT(DISTINCT username) FROM messages WHERE room = %s", (room_id,))
+    total_users = c.fetchone()[0]
+
+    c.execute("SELECT COUNT(*) FROM messages WHERE room = %s AND username = %s", (room_id, username))
+    personal_msgs = c.fetchone()[0]
+
+    msg = f"Room Stats:\nUsers: {total_users}\nTotal Messages: {total_msgs}\nYour Messages: {personal_msgs}"
+    sock.send(msg.encode())
+
+def handle_leaderboard_command(sock):
+    user = clients[sock]
+    username = user['username']
+
+    c.execute("SELECT username, total_time_online FROM users ORDER BY total_time_online DESC LIMIT 10")
+    time_board = c.fetchall()
+
+    c.execute("SELECT username, total_messages FROM users ORDER BY total_messages DESC LIMIT 10")
+    msg_board = c.fetchall()
+
+    c.execute("SELECT COUNT(*) FROM users WHERE total_time_online > (SELECT total_time_online FROM users WHERE username = %s)", (username,))
+    rank_time = c.fetchone()[0] + 1
+
+    c.execute("SELECT COUNT(*) FROM users WHERE total_messages > (SELECT total_messages FROM users WHERE username = %s)", (username,))
+    rank_msgs = c.fetchone()[0] + 1
+
+    tb = "\nTop 10 by Active Time:\n" + "\n".join([f"{i+1}. {u} ({t}s)" for i, (u, t) in enumerate(time_board)])
+    mb = "\nTop 10 by Messages:\n" + "\n".join([f"{i+1}. {u} ({m})" for i, (u, m) in enumerate(msg_board)])
+    ranks = f"\nYour Rank by Time: {rank_time}\nYour Rank by Messages: {rank_msgs}"
+
+    sock.send((tb + "\n\n" + mb + "\n" + ranks).encode())
 
 def handle_client(client):
     try:
@@ -127,7 +176,7 @@ def handle_client(client):
         broadcast(f"[{username} has joined the room]", room_id, client)
 
         while True:
-            msg = client.recv(1024).decode()
+            msg = client.recv(2048).decode()
             if msg.strip().lower() == "/exit":
                 break
             if msg.strip().lower() == "/chclr":
@@ -139,6 +188,15 @@ def handle_client(client):
                     client.send(f"Color changed to {new_color}".encode())
                 else:
                     client.send("Invalid color name.".encode())
+                continue
+            if msg.strip().lower() == "/active":
+                handle_active_command(client)
+                continue
+            elif msg.strip().lower() == "/stats":
+                handle_stats_command(client)
+                continue
+            elif msg.strip().lower() == "/leaderboard":
+                handle_leaderboard_command(client)
                 continue
 
             username_colored = f"<{clients[client]['color']}>\033[1m{username}\033[0m"

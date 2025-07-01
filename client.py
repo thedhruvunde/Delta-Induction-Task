@@ -26,7 +26,7 @@ def parse_color_tags(msg):
 def receive_messages(sock):
     while True:
         try:
-            msg = sock.recv(1024).decode()
+            msg = sock.recv(2048).decode()
             if not msg:
                 break
             msg = parse_color_tags(msg)
