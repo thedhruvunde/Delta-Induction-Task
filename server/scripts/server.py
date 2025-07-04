@@ -4,20 +4,17 @@ import time
 import random
 from datetime import datetime
 import psycopg2
+import os
 HOST = '127.0.0.1'
 PORT = 5555
 
 conn = psycopg2.connect(
-    dbname="masalachatdb",
-    user="hyphen",
-    password="hackjack",
-    host="localhost",
-    port="5432"
+    dbname=os.environ.get("DB_NAME", "masalachatdb"),
+    user=os.environ.get("DB_USER", "chatuser"),
+    password=os.environ.get("DB_PASSWORD", "chatpass"),
+    host=os.environ.get("DB_HOST", "localhost"),
+    port=os.environ.get("DB_PORT", 5432)
 )
-c = conn.cursor()
-c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, total_messages INTEGER, total_time_online REAL)''')
-c.execute('''CREATE TABLE IF NOT EXISTS messages (username TEXT, room TEXT, content TEXT, timestamp TEXT)''')
-conn.commit()
 clients = {}  # socket: {username, room, join_time, message_count, color}
 rooms = {}  # room_id: {"clients": set(), "is_private": bool, "created_by": username, "name": str}
 lock = threading.Lock()
