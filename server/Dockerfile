@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY . .
 
-RUN pip3 install --no-cache-dir psycopg2-binary colorama
+RUN pip3 install --no-cache-dir psycopg2-binary colorama bcrypt
 
 CMD ["python", "scripts/server.py"]
 

@@ -1,226 +1,149 @@
 import socket
 import threading
-import time
-import random
-from datetime import datetime
-import psycopg2
 import os
-HOST = '127.0.0.1'
-PORT = 5555
+import psycopg2
+import bcrypt
 
-conn = psycopg2.connect(
-    dbname=os.environ.get("DB_NAME", "masalachatdb"),
-    user=os.environ.get("DB_USER", "chatuser"),
-    password=os.environ.get("DB_PASSWORD", "chatpass"),
-    host=os.environ.get("DB_HOST", "localhost"),
-    port=os.environ.get("DB_PORT", 5432)
-)
-clients = {}  # socket: {username, room, join_time, message_count, color}
-rooms = {}  # room_id: {"clients": set(), "is_private": bool, "created_by": username, "name": str}
-lock = threading.Lock()
+# PostgreSQL configuration from environment variables
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_NAME = os.getenv("DB_NAME", "masalachatdb")
+DB_USER = os.getenv("DB_USER", "chatuser")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "chatpass")
 
-COLORS = ["RED", "GREEN", "YELLOW", "BLUE", "MAGENTA", "CYAN", "WHITE"]
+# Setup PostgreSQL connection
+def get_db_connection():
+    return psycopg2.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        dbname=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD
+    )
 
-def generate_room_id():
-    while True:
-        room_id = str(random.randint(100000, 999999))
-        if room_id not in rooms:
-            return room_id
+# Create users table if not exists
+def init_db():
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL
+            timestamp TIMESTAMPTZ DEFAULT NOW()
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
 
-def broadcast(msg, room, sender_socket):
-    with lock:
-        for client in rooms.get(room, {}).get("clients", []):
+# Register a new user
+def register_user(conn, username, password):
+    cur = conn.cursor()
+    try:
+        hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+        cur.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)", (username, hashed))
+        conn.commit()
+        return True
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        return False
+    except Exception as e:
+        print("Error registering user:", e)
+        conn.rollback()
+        return False
+    finally:
+        cur.close()
+
+# Authenticate a user
+def authenticate_user(conn, username, password):
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT password_hash FROM users WHERE username = %s", (username,))
+        result = cur.fetchone()
+        if result and bcrypt.checkpw(password.encode(), result[0].encode()):
+            return True
+        return False
+    finally:
+        cur.close()
+
+# Handle client connections
+clients = []
+client_usernames = {}
+
+def broadcast(message, sender_socket=None):
+    for client in clients:
+        if client != sender_socket:
             try:
-                client.send(msg.encode())
+                client.send(message)
             except:
                 client.close()
-                remove_client(client)
+                clients.remove(client)
 
-def remove_client(client):
-    with lock:
-        user = clients.get(client, {})
-        if user:
-            room = user['room']
-            username = user['username']
-            join_time = user['join_time']
-            total_time = time.time() - join_time
-            message_count = user['message_count']
+def handle_client(client_socket, address):
+    print(f"[NEW CONNECTION] {address} connected.")
 
-            c.execute("INSERT OR IGNORE INTO users (username, total_messages, total_time_online) VALUES (?, 0, 0)", (username,))
-            c.execute("UPDATE users SET total_messages = total_messages + ?, total_time_online = total_time_online + ? WHERE username = ?",
-                      (message_count, total_time, username))
-            conn.commit()
+    conn = get_db_connection()
 
-            if room in rooms:
-                rooms[room]["clients"].discard(client)
-            del clients[client]
-            client.close()
-
-def handle_active_command(sock):
-    user = clients[sock]
-    room_id = user['room']
-    usernames = [clients[c]['username'] for c in rooms[room_id]["clients"]]
-    msg = f"Total Active Users: {len(usernames)}\n" + "\n".join(usernames)
-    sock.send(msg.encode())
-
-def handle_stats_command(sock):
-    user = clients[sock]
-    room_id = user['room']
-    username = user['username']
-
-    c.execute("SELECT COUNT(*) FROM messages WHERE room = %s", (room_id,))
-    total_msgs = c.fetchone()[0]
-
-    c.execute("SELECT COUNT(DISTINCT username) FROM messages WHERE room = %s", (room_id,))
-    total_users = c.fetchone()[0]
-
-    c.execute("SELECT COUNT(*) FROM messages WHERE room = %s AND username = %s", (room_id, username))
-    personal_msgs = c.fetchone()[0]
-
-    msg = f"Room Stats:\nUsers: {total_users}\nTotal Messages: {total_msgs}\nYour Messages: {personal_msgs}"
-    sock.send(msg.encode())
-
-def handle_leaderboard_command(sock):
-    user = clients[sock]
-    username = user['username']
-
-    c.execute("SELECT username, total_time_online FROM users ORDER BY total_time_online DESC LIMIT 10")
-    time_board = c.fetchall()
-
-    c.execute("SELECT username, total_messages FROM users ORDER BY total_messages DESC LIMIT 10")
-    msg_board = c.fetchall()
-
-    c.execute("SELECT COUNT(*) FROM users WHERE total_time_online > (SELECT total_time_online FROM users WHERE username = %s)", (username,))
-    rank_time = c.fetchone()[0] + 1
-
-    c.execute("SELECT COUNT(*) FROM users WHERE total_messages > (SELECT total_messages FROM users WHERE username = %s)", (username,))
-    rank_msgs = c.fetchone()[0] + 1
-
-    tb = "\nTop 10 by Active Time:\n" + "\n".join([f"{i+1}. {u} ({t}s)" for i, (u, t) in enumerate(time_board)])
-    mb = "\nTop 10 by Messages:\n" + "\n".join([f"{i+1}. {u} ({m})" for i, (u, m) in enumerate(msg_board)])
-    ranks = f"\nYour Rank by Time: {rank_time}\nYour Rank by Messages: {rank_msgs}"
-
-    sock.send((tb + "\n\n" + mb + "\n" + ranks).encode())
-
-def handle_client(client):
     try:
-        client.send("Enter username: ".encode())
-        username = client.recv(1024).decode().strip()
+        client_socket.send(b"Do you want to [register] or [login]? ")
+        choice = client_socket.recv(1024).decode().strip()
 
-        client.send("Choose an option:\n1. Create Room\n2. Join Room\nEnter 1 or 2: ".encode())
-        option = client.recv(1024).decode().strip()
+        client_socket.send(b"Enter username: ")
+        username = client_socket.recv(1024).decode().strip()
 
-        if option == '1':
-            client.send("Do you want to make the room private? (yes/no): ".encode())
-            private_input = client.recv(1024).decode().strip().lower()
-            is_private = private_input == 'yes'
-            client.send("Enter a name for your room: ".encode())
-            room_name = client.recv(1024).decode().strip()
-            room_id = generate_room_id()
-            rooms[room_id] = {"clients": set(), "is_private": is_private, "created_by": username, "name": room_name}
-            client.send(f"Created and joined {'private' if is_private else 'public'} room {room_name} with ID {room_id}".encode())
-        elif option == '2':
-            client.send("Choose how to join:\n1. Join by Room ID\n2. See list of public rooms\nEnter 1 or 2: ".encode())
-            join_option = client.recv(1024).decode().strip()
+        client_socket.send(b"Enter password: ")
+        password = client_socket.recv(1024).decode().strip()
 
-            if join_option == '1':
-                client.send("Enter 6-digit Room ID: ".encode())
-                room_id = client.recv(1024).decode().strip()
-                if room_id not in rooms:
-                    client.send("Room does not exist. Disconnecting...".encode())
-                    client.close()
-                    return
-                if rooms[room_id]["is_private"]:
-                    client.send("This room is private. Enter creator's username to join: ".encode())
-                    creator = client.recv(1024).decode().strip()
-                    if creator != rooms[room_id]["created_by"]:
-                        client.send("Access denied. Disconnecting...".encode())
-                        client.close()
-                        return
-            elif join_option == '2':
-                public_rooms = [(rid, data['name'], len(data['clients'])) for rid, data in rooms.items() if not data['is_private']]
-                if not public_rooms:
-                    client.send("No public rooms available. Disconnecting...".encode())
-                    client.close()
-                    return
-                room_list_msg = "Available Public Rooms:\n" + "\n".join([f"{name} (ID: {rid}) - {count} users" for rid, name, count in public_rooms]) + "\nEnter Room ID to join: "
-                client.send(room_list_msg.encode())
-                room_id = client.recv(1024).decode().strip()
-                if room_id not in rooms or rooms[room_id]["is_private"]:
-                    client.send("Invalid room selection. Disconnecting...".encode())
-                    client.close()
-                    return
+        if choice.lower() == "register":
+            if register_user(conn, username, password):
+                client_socket.send(b"Registration successful.\n")
             else:
-                client.send("Invalid selection. Disconnecting...".encode())
-                client.close()
+                client_socket.send(b"Username already exists or registration error.\n")
+                client_socket.close()
+                return
+        elif choice.lower() == "login":
+            if authenticate_user(conn, username, password):
+                client_socket.send(b"Login successful.\n")
+            else:
+                client_socket.send(b"Invalid credentials.\n")
+                client_socket.close()
                 return
         else:
-            client.send("Invalid option. Disconnecting...".encode())
-            client.close()
+            client_socket.send(b"Invalid option. Disconnecting.\n")
+            client_socket.close()
             return
 
-        color = random.choice(COLORS)
-        with lock:
-            rooms[room_id]["clients"].add(client)
-            clients[client] = {
-                'username': username,
-                'room': room_id,
-                'join_time': time.time(),
-                'message_count': 0,
-                'color': color
-            }
-
-        broadcast(f"[{username} has joined the room]", room_id, client)
+        clients.append(client_socket)
+        client_usernames[client_socket] = username
+        broadcast(f"[{username}] has joined the chat!\n".encode(), client_socket)
 
         while True:
-            msg = client.recv(2048).decode()
-            if msg.strip().lower() == "/exit":
+            msg = client_socket.recv(1024)
+            if not msg:
                 break
-            if msg.strip().lower() == "/chclr":
-                color_list = "\n".join([f"<{clr}> {clr}" for clr in COLORS])
-                client.send(("Choose a color from the list:\n" + color_list + "\nYour choice: ").encode())
-                new_color = client.recv(1024).decode().strip().upper()
-                if new_color in COLORS:
-                    clients[client]['color'] = new_color
-                    client.send(f"Color changed to {new_color}".encode())
-                else:
-                    client.send("Invalid color name.".encode())
-                continue
-            if msg.strip().lower() == "/active":
-                handle_active_command(client)
-                continue
-            elif msg.strip().lower() == "/stats":
-                handle_stats_command(client)
-                continue
-            elif msg.strip().lower() == "/leaderboard":
-                handle_leaderboard_command(client)
-                continue
+            broadcast(f"[{username}] {msg.decode()}".encode(), client_socket)
 
-            username_colored = f"<{clients[client]['color']}>\033[1m{username}\033[0m"
-            message_data = f"{username_colored}\n\033[97m{msg}\033[0m"
-            broadcast(message_data, room_id, client)
-
-            with lock:
-                clients[client]['message_count'] += 1
-                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                c.execute("INSERT INTO messages (username, room, content, timestamp) VALUES (?, ?, ?, ?)",
-                          (username, room_id, msg, timestamp))
-                conn.commit()
-    except:
-        pass
+    except Exception as e:
+        print(f"Error handling client {address}: {e}")
     finally:
-        remove_client(client)
+        print(f"[DISCONNECT] {address} disconnected.")
+        if client_socket in clients:
+            clients.remove(client_socket)
+            broadcast(f"[{client_usernames.get(client_socket)}] has left the chat.\n".encode())
+        client_socket.close()
+        conn.close()
 
 def start_server():
+    init_db()
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((HOST, PORT))
+    server.bind(('127.0.0.1', 5555))
     server.listen()
-    print(f"Server listening on {HOST}:{PORT}")
+    print("[SERVER STARTED] Listening on port 5555...")
 
     while True:
-        client, addr = server.accept()
-        print(f"Connected by {addr}")
-        thread = threading.Thread(target=handle_client, args=(client,))
+        client_socket, address = server.accept()
+        thread = threading.Thread(target=handle_client, args=(client_socket, address))
         thread.start()
 
 if __name__ == "__main__":
