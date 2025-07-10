@@ -1,5 +1,4 @@
 import getpass
-from multiprocessing.resource_tracker import getfd
 
 def mod_exp(base, exponent, modulus):
     result = 1
