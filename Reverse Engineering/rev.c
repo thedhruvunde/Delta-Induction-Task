@@ -16,6 +16,7 @@ int main(){
         else{
             val += ((str[i] * str[i]) + (str[i] * (100 - i)) + i + (str[i] * 7) + ((str[i]|i)&(i+3)));
             val -=  ((str[i] * str[i]) % (i + 1 ));
+            printf("i=%2d char=%c (%d) val=%d\n", i, str[i], str[i], val);
         }
     }
 
