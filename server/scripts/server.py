@@ -30,7 +30,7 @@ def init_db():
             id SERIAL PRIMARY KEY,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL
-            timestamp TIMESTAMPTZ DEFAULT NOW()
+            created_at TIMESTAMPTZ DEFAULT NOW()
         );
     """)
     conn.commit()
